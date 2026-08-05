@@ -1,55 +1,34 @@
-# GK Static Dashboard
+# GK Static Dashboard — restored original layout
 
-This repository is a **read-only, self-contained static dashboard**. It has:
+This package keeps the original dashboard structure and format:
 
-- **one collapsible navigation panel**
-- **Official Dashboard** for the supervisor overview
-- **Detail Dashboard** for deeper analytics and the filtered record table
-- **no backend, no Power Automate, no save/load API, and no data-entry feature**
+- `index.html`: Supervisor overview / home page.
+- `official.html`: Official detailed dashboard.
+- The home page keeps only the **Official Dashboard** button.
+- **Create Custom** has been removed.
+- **Follow-up GK**, tracking, comments, deadlines, updated-by fields, and related Power Automate behavior have been removed.
+- **Pending Timeline** is retained as a read-only view.
+- Completed cases use `Approved Date`, `Approval Date`, or `Completed Date` for timeline reporting; other cases use `Submitted Date`.
 
-## Timeline rule
+## Automatic rebuild
 
-- `Completed` cases use `Approved Date` or `Approval Date` when present; the current export uses `Completed Date` as the approval/completion date.
-- `In Progress` and `Rejected` cases use `Submitted Date`.
-- If a completed case has none of those dates, the dashboard falls back to `Submitted Date`.
+Replace this file without changing its name:
 
-This event date drives the Month, Week, Date Range, and timeline charts.
+```text
+data/Submitter_Tracking_Master_With_Supervisor.xlsx
+```
 
-## Rebuild the static dashboard
+Then commit the change to GitHub. The workflow in `.github/workflows/deploy-dashboard.yml` automatically rebuilds and publishes both static pages.
+
+To rebuild locally:
 
 ```bash
 pip install -r requirements.txt
 python build_dashboard.py
 ```
 
-The command regenerates `index.html` from:
+## GitHub Pages
 
-```text
-data/Submitter_Tracking_Master_With_Supervisor.xlsx
-```
+Use **Settings → Pages → Source: GitHub Actions**.
 
-## Publish with GitHub Pages
-
-1. Push this folder to a GitHub repository.
-2. Open repository **Settings → Pages**.
-3. Set **Source** to **GitHub Actions**.
-4. Commit new Excel data to trigger the workflow.
-
-No Python server is required after the file has been generated.
-
-## Update source data
-
-Replace or regenerate the master Excel file, then commit it to GitHub or run locally:
-
-```bash
-python build_dashboard.py
-```
-
-`Zone3_GK_folder_updater.py` is retained for rebuilding the master file from exports and the IDL mapping list.
-
-## Automatic GitHub Pages deployment
-
-This repository includes `.github/workflows/deploy-dashboard.yml`.
-Replacing `data/Submitter_Tracking_Master_With_Supervisor.xlsx` and committing the change triggers GitHub Actions to rebuild `index.html` and deploy it to GitHub Pages.
-
-> Important: files committed to a public repository and the generated GitHub Pages website are publicly accessible. Remove or anonymize sensitive employee data before publishing.
+> The Excel file and generated static pages may expose internal information when the repository or GitHub Pages site is public.
