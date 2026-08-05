@@ -9,6 +9,8 @@ on:
       - "data/**/*.xlsm"
       - "build_dashboard.py"
       - "gk_dashboard_core.py"
+      - "index.html"
+      - "official.html"
       - "requirements.txt"
       - ".github/workflows/deploy-dashboard.yml"
 
@@ -47,6 +49,7 @@ jobs:
         run: |
           mkdir -p site
           cp index.html site/index.html
+          cp official.html site/official.html
           touch site/.nojekyll
 
       - name: Configure GitHub Pages
