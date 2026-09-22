@@ -67,14 +67,28 @@ def build_roster_context(raw_master: pd.DataFrame, supervisors: list[str]) -> di
     """
     canonical = {_norm(s): s for s in supervisors}
 
-    # ----- New roster: direct Supervisor assignment from the approved Sep file.
+    # ----- New/current roster: direct Supervisor assignment from the approved Sep file.
     new_counts = Counter()
+    current_members: list[dict] = []
     if NEW_IDL_FILE.exists():
         new_idl = _valid_idl_rows(pd.read_excel(NEW_IDL_FILE, sheet_name=0))
         for _, row in new_idl.iterrows():
             sup = canonical.get(_norm(row.get("Supervisor", "")))
-            if sup:
-                new_counts[sup] += 1
+            if not sup:
+                continue
+            new_counts[sup] += 1
+            current_members.append({
+                "employeeCode": _employee_code(row.get("Employee Code", "")),
+                "fullName": "" if pd.isna(row.get("Full name", "")) else str(row.get("Full name", "")).strip(),
+                "title": "" if pd.isna(row.get("Title", "")) else str(row.get("Title", "")).strip(),
+                "type": "" if pd.isna(row.get("Type", "")) else str(row.get("Type", "")).strip(),
+                "lineLeader": "" if pd.isna(row.get("Line Leader", "")) else str(row.get("Line Leader", "")).strip(),
+                "shiftLeader": "" if pd.isna(row.get("Shift Leader", "")) else str(row.get("Shift Leader", "")).strip(),
+                "supervisor": sup,
+                "group": "" if pd.isna(row.get("Mgt (group)", "")) else str(row.get("Mgt (group)", "")).strip(),
+                "email": "" if pd.isna(row.get("Email", "")) else str(row.get("Email", "")).strip(),
+            })
+        current_members.sort(key=lambda r: (r["supervisor"], _norm(r["fullName"]), r["employeeCode"]))
 
     # ----- Historical name -> KPI supervisor bridge from the frozen master.
     history = raw_master.copy()
@@ -131,6 +145,7 @@ def build_roster_context(raw_master: pd.DataFrame, supervisors: list[str]) -> di
         "cutoff": CUTOFF.date().isoformat(),
         "old": {s: int(old_counts.get(s, 0)) for s in supervisors},
         "new": {s: int(new_counts.get(s, 0)) for s in supervisors},
+        "members": current_members,
     }
 
 
@@ -167,6 +182,7 @@ def build() -> tuple[Path, Path]:
     print(f"Built {HOME_OUTPUT.name} and {OFFICIAL_OUTPUT.name} with {len(records)} records")
     print(f"Historical roster headcount: {roster_context['old']}")
     print(f"Sep+ roster headcount       : {roster_context['new']}")
+    print(f"Current roster members      : {len(roster_context.get('members', []))}")
     return HOME_OUTPUT, OFFICIAL_OUTPUT
 
 
