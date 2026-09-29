@@ -824,7 +824,7 @@ __SUPERVISOR_FILTER_BLOCK__
         });
     });
     }
-    function exportFilteredCsv(){const rows=getFilteredData();const headers=['reference','title','supervisor','owner','submitter','status','gkType','gkOther','eventMonth','eventWeek','submittedDate','completedDate','completedSavings','before','after'];const csv=[headers.join(',')].concat(rows.map(r=>headers.map(h=>'"'+String(r[h]??'').replace(/"/g,'""')+'"').join(','))).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='gk_filtered_export.csv';a.click();URL.revokeObjectURL(url)}
+    function exportFilteredCsv(){const rows=getFilteredData();const headers=['reference','title','supervisor','owner','submitter','status','gkType','gkOther','eventMonth','eventWeek','submittedDate','completedDate','completedSavings','before','after'];const escapeCsv=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const csv=[headers.map(escapeCsv).join(',')].concat(rows.map(r=>headers.map(h=>escapeCsv(r[h])).join(','))).join('\r\n');const utf8Bom='\uFEFF';const blob=new Blob([utf8Bom,csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='gk_filtered_export.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
     function closeAllDropdownsBeforeExport(){
         document.querySelectorAll('details[open]').forEach(d=>d.removeAttribute('open'));
         const exportMenu=document.getElementById('exportMenu');
