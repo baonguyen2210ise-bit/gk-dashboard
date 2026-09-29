@@ -1227,28 +1227,46 @@ def render_home_dashboard(
       document.getElementById('kpiTotal').textContent=fmtInt.format(total);document.getElementById('kpiActivePeople').textContent=fmtInt.format(activePeople.size);document.getElementById('kpiActiveRate').textContent=`${fmtPct.format(activeRate)}%`;document.getElementById('kpiAvgPerPerson').textContent=fmtOne.format(avg);document.getElementById('kpiCompletion').textContent=total?`${fmtPct.format(100*completed/total)}%`:'0%';document.getElementById('kpiSavings').textContent=fmtMoney.format(savings);
     }
     function renderSupervisorCases(data){
-      const rows=selectedSupervisors().map(s=>({supervisor:s,cases:data.filter(d=>d.supervisor===s).length})).sort((a,b)=>b.cases-a.cases||a.supervisor.localeCompare(b.supervisor));
       const el=document.getElementById('supervisorCasesChart');
-      if(!rows.length){el.innerHTML='<div class="empty-state">No GK cases in the current selection.</div>';return}
+      const rows=selectedSupervisors().map(s=>{
+        const r=data.filter(d=>d.supervisor===s);
+        return{
+          supervisor:s,
+          completed:r.filter(d=>d.status==='Completed').length,
+          inprogress:r.filter(d=>d.status==='In Progress').length,
+          rejected:r.filter(d=>d.status==='Rejected').length,
+          total:r.length
+        }
+      }).filter(r=>r.total>0).sort((a,b)=>a.total-b.total||a.supervisor.localeCompare(b.supervisor));
       try{Plotly.purge(el)}catch(e){}
       el.innerHTML='';
-      const max=Math.max(1,...rows.map(r=>r.cases));
-      const layout=basePlotLayout({margin:{l:45,r:20,t:10,b:85}});
-      layout.yaxis.range=[0,max*1.2];
-      layout.yaxis.title={text:'Cases',font:{size:10}};
-      layout.xaxis.tickangle=-22;
+      if(!rows.length){el.innerHTML='<div class="empty-state">No GK cases in the current selection.</div>';return}
+
+      const specs=[
+        ['Completed','completed',statusColors.Completed],
+        ['In Progress','inprogress',statusColors['In Progress']],
+        ['Rejected','rejected',statusColors.Rejected]
+      ].filter(([name])=>state.statuses.has(name));
+      const y=rows.map(r=>shortName(r.supervisor));
+      const traces=specs.map(([name,key,color])=>({
+        type:'bar',orientation:'h',name,
+        x:rows.map(r=>r[key]),y,
+        marker:{color,line:{width:0}},
+        text:rows.map(r=>r[key]>0?fmtInt.format(r[key]):''),
+        textposition:'inside',
+        textfont:{size:10,color:'#fff'},
+        insidetextanchor:'middle',
+        customdata:rows.map(r=>[r.supervisor,r[key],r.total]),
+        hovertemplate:'%{customdata[0]}<br>'+name+': %{customdata[1]:,}<br>Total selected: %{customdata[2]:,}<extra></extra>'
+      }));
+      const max=Math.max(1,...rows.map(r=>r.total));
+      const layout=basePlotLayout({barmode:'stack',margin:{l:105,r:35,t:34,b:38},showlegend:true});
+      layout.xaxis.range=[0,max*1.12];
+      layout.xaxis.title={text:'Cases',font:{size:10}};
       layout.xaxis.automargin=true;
-      Plotly.react('supervisorCasesChart',[{
-        type:'bar',
-        x:rows.map(r=>shortName(r.supervisor)),
-        y:rows.map(r=>r.cases),
-        marker:{color:rows.map(r=>supervisorColors[r.supervisor]),line:{width:0}},
-        text:rows.map(r=>fmtInt.format(r.cases)),
-        textposition:'outside',
-        cliponaxis:false,
-        customdata:rows.map(r=>r.supervisor),
-        hovertemplate:'%{customdata}<br>GK cases: %{y:,}<extra></extra>'
-      }],layout,{displayModeBar:false,responsive:true});
+      layout.yaxis.automargin=true;
+      layout.legend={orientation:'h',x:0,y:1.16,font:{size:9},bgcolor:'rgba(0,0,0,0)'};
+      Plotly.newPlot(el,traces,layout,{displayModeBar:false,responsive:true});
     }
 
     function normalizeMemberCode(v){const s=String(v??'').trim().replace(/\.0$/,'');const digits=s.replace(/\D/g,'');return digits||s}
