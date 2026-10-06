@@ -11,6 +11,7 @@ on:
       # Supervisor mapping inputs.
       - "data/IDL List.xlsx"
       - "data/IDL List Sep2026.xlsx"
+      - "data/IDL List Oct2026.xlsx"
 
       # Pipeline / dashboard source code.
       - "Zone3_GK_folder_updater.py"
