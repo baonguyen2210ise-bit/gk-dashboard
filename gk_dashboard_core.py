@@ -1004,7 +1004,9 @@ def render_home_dashboard(
     plotly_js = get_plotlyjs()
     statuses = ['Completed', 'In Progress', 'Rejected']
     gk_types = sorted({r.get('gkTypeFilter', '(Blank)') for r in data_records}) or ['(Blank)']
-    supervisors = sorted({(r.get('supervisor') or '').strip() for r in data_records if str(r.get('supervisor') or '').strip()}) or ['(Blank)']
+    data_supervisors = {(r.get('supervisor') or '').strip() for r in data_records if str(r.get('supervisor') or '').strip()}
+    roster_supervisors = set((roster_context.get('old') or {}).keys()) | set((roster_context.get('sep') or {}).keys()) | set((roster_context.get('oct') or {}).keys()) | {str(m.get('supervisor') or '').strip() for m in (roster_context.get('members') or []) if str(m.get('supervisor') or '').strip()}
+    supervisors = sorted(data_supervisors | roster_supervisors) or ['(Blank)']
     all_weeks = [wk['label'] for wk in WEEKS_2026]
     week_set = {r.get('eventWeek') for r in data_records if r.get('eventWeek') in all_weeks}
     weeks = [wk for wk in all_weeks if wk in week_set] or all_weeks
@@ -1014,7 +1016,7 @@ def render_home_dashboard(
         if re.fullmatch(r'\d{4}-\d{2}', str(r.get('eventMonth') or ''))
     }
     months = sorted(month_set) or ['No Month']
-    roster_context = roster_context or {'cutoff': '2026-09-01', 'old': {}, 'new': {}}
+    roster_context = roster_context or {'sepCutoff': '2026-09-01', 'octCutoff': '2026-10-01', 'old': {}, 'sep': {}, 'oct': {}, 'members': []}
 
     template = r'''<!DOCTYPE html>
 <html lang="en">
@@ -1141,7 +1143,7 @@ def render_home_dashboard(
       </div>
       <div class="team-section-body">
         <div class="team-table-wrap"><table class="team-table" id="teamTable"></table></div>
-        <div class="team-footnote">Current roster membership comes from the active Sep-2026 IDL list. Activity columns follow the dashboard filters.</div>
+        <div class="team-footnote">Current roster membership comes from the active Oct-2026 IDL list. Activity columns follow the dashboard filters.</div>
       </div>
     </section>
   </div>
@@ -1170,7 +1172,7 @@ def render_home_dashboard(
     function formatMonth(m){if(!/^\d{4}-\d{2}$/.test(m))return m;const [y,mm]=m.split('-').map(Number);return `${monthNames[mm-1]} ${y}`}
     function shortMonth(m){if(!/^\d{4}-\d{2}$/.test(m))return m;return monthNames[Number(m.slice(5,7))-1]}
     function shortName(s){const p=String(s||'').split(/\s+/);return p.length>3?`${p[0]} ${p[p.length-1]}`:s}
-    function rosterPeriodForMonth(m){return m>='2026-09'?'new':'old'}
+    function rosterPeriodForMonth(m){return m>='2026-10'?'oct':m>='2026-09'?'sep':'old'}
     function headcount(sup,m){return Number(rosterContext?.[rosterPeriodForMonth(m)]?.[sup]||0)}
     function visibleMonths(){return allMonths.filter(m=>state.months.has(m))}
     function selectedSupervisors(){return allSupervisors.filter(s=>state.supervisors.has(s))}

@@ -17,11 +17,13 @@ from gk_dashboard_core import (
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_FILE = BASE_DIR / "data" / "Submitter_Tracking_Master_With_Supervisor.xlsx"
 OLD_IDL_FILE = BASE_DIR / "data" / "IDL List.xlsx"
-NEW_IDL_FILE = BASE_DIR / "data" / "IDL List Sep2026.xlsx"
+SEP_IDL_FILE = BASE_DIR / "data" / "IDL List Sep2026.xlsx"
+OCT_IDL_FILE = BASE_DIR / "data" / "IDL List Oct2026.xlsx"
 LOGO_HTML = BASE_DIR / "data" / "Milwaukee-logo.html"
 HOME_OUTPUT = BASE_DIR / "index.html"
 OFFICIAL_OUTPUT = BASE_DIR / "official.html"
-CUTOFF = pd.Timestamp("2026-09-01")
+SEP_CUTOFF = pd.Timestamp("2026-09-01")
+OCT_CUTOFF = pd.Timestamp("2026-10-01")
 
 
 def _norm(value) -> str:
@@ -59,7 +61,7 @@ def build_roster_context(raw_master: pd.DataFrame, supervisors: list[str]) -> di
     """
     Build headcount denominators for the Overview dashboard.
 
-    Sep-2026 onward is direct from the approved Sep IDL file.
+    Sep-2026 uses the approved Sep IDL file; Oct-2026 onward uses the approved Oct IDL file.
     Jan-Aug uses the historical master as the bridge back to the old IDL so the
     roster is grouped under the same six KPI supervisors used by the frozen
     historical dashboard, even though the old workbook still contains legacy
@@ -67,16 +69,25 @@ def build_roster_context(raw_master: pd.DataFrame, supervisors: list[str]) -> di
     """
     canonical = {_norm(s): s for s in supervisors}
 
-    # ----- New/current roster: direct Supervisor assignment from the approved Sep file.
-    new_counts = Counter()
+    # ----- Sep roster: used only for Sep-2026 denominator.
+    sep_counts = Counter()
+    if SEP_IDL_FILE.exists():
+        sep_idl = _valid_idl_rows(pd.read_excel(SEP_IDL_FILE, sheet_name=0))
+        for _, row in sep_idl.iterrows():
+            sup = canonical.get(_norm(row.get("Supervisor", "")))
+            if sup:
+                sep_counts[sup] += 1
+
+    # ----- Oct/current roster: used from Oct-2026 onward and for Current Team Members.
+    oct_counts = Counter()
     current_members: list[dict] = []
-    if NEW_IDL_FILE.exists():
-        new_idl = _valid_idl_rows(pd.read_excel(NEW_IDL_FILE, sheet_name=0))
-        for _, row in new_idl.iterrows():
+    if OCT_IDL_FILE.exists():
+        oct_idl = _valid_idl_rows(pd.read_excel(OCT_IDL_FILE, sheet_name=0))
+        for _, row in oct_idl.iterrows():
             sup = canonical.get(_norm(row.get("Supervisor", "")))
             if not sup:
                 continue
-            new_counts[sup] += 1
+            oct_counts[sup] += 1
             current_members.append({
                 "employeeCode": _employee_code(row.get("Employee Code", "")),
                 "fullName": "" if pd.isna(row.get("Full name", "")) else str(row.get("Full name", "")).strip(),
@@ -93,7 +104,7 @@ def build_roster_context(raw_master: pd.DataFrame, supervisors: list[str]) -> di
     # ----- Historical name -> KPI supervisor bridge from the frozen master.
     history = raw_master.copy()
     submitted = pd.to_datetime(history.get("Submitted Date"), dayfirst=True, errors="coerce")
-    history = history[submitted < CUTOFF].copy()
+    history = history[submitted < SEP_CUTOFF].copy()
 
     name_sup_sets: dict[str, set[str]] = defaultdict(set)
     for _, row in history.iterrows():
@@ -142,12 +153,37 @@ def build_roster_context(raw_master: pd.DataFrame, supervisors: list[str]) -> di
 
     # Guarantee every dashboard supervisor has an explicit numeric denominator.
     return {
-        "cutoff": CUTOFF.date().isoformat(),
+        "sepCutoff": SEP_CUTOFF.date().isoformat(),
+        "octCutoff": OCT_CUTOFF.date().isoformat(),
         "old": {s: int(old_counts.get(s, 0)) for s in supervisors},
-        "new": {s: int(new_counts.get(s, 0)) for s in supervisors},
+        "sep": {s: int(sep_counts.get(s, 0)) for s in supervisors},
+        "oct": {s: int(oct_counts.get(s, 0)) for s in supervisors},
         "members": current_members,
     }
 
+
+
+def _display_no_accent(value) -> str:
+    if pd.isna(value):
+        return ""
+    text = str(value).replace("Đ", "D").replace("đ", "d")
+    text = "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _roster_supervisors() -> set[str]:
+    out: set[str] = set()
+    for path in (SEP_IDL_FILE, OCT_IDL_FILE):
+        if not path.exists():
+            continue
+        df = pd.read_excel(path, sheet_name=0)
+        if "Supervisor" not in df.columns:
+            continue
+        for value in df["Supervisor"].dropna():
+            name = _display_no_accent(value)
+            if name:
+                out.add(name)
+    return out
 
 def build() -> tuple[Path, Path]:
     raw_master = pd.read_excel(INPUT_FILE, sheet_name=0)
@@ -159,7 +195,8 @@ def build() -> tuple[Path, Path]:
     latest_dates = df["Submitted Date Parsed"].dropna()
     latest_update = format_display_date(latest_dates.max()) if not latest_dates.empty else ""
     logo_data_uri = extract_logo_data_uri(logo_html=LOGO_HTML)
-    supervisors = sorted(df["Supervisor Display"].dropna().astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
+    data_supervisors = set(df["Supervisor Display"].dropna().astype(str).str.strip().replace("", pd.NA).dropna().unique().tolist())
+    supervisors = sorted(data_supervisors | _roster_supervisors())
     roster_context = build_roster_context(raw_master, supervisors)
 
     home_html = render_home_dashboard(
@@ -181,7 +218,8 @@ def build() -> tuple[Path, Path]:
     OFFICIAL_OUTPUT.write_text(official_html, encoding="utf-8")
     print(f"Built {HOME_OUTPUT.name} and {OFFICIAL_OUTPUT.name} with {len(records)} records")
     print(f"Historical roster headcount: {roster_context['old']}")
-    print(f"Sep+ roster headcount       : {roster_context['new']}")
+    print(f"Sep roster headcount        : {roster_context['sep']}")
+    print(f"Oct+ roster headcount       : {roster_context['oct']}")
     print(f"Current roster members      : {len(roster_context.get('members', []))}")
     return HOME_OUTPUT, OFFICIAL_OUTPUT
 

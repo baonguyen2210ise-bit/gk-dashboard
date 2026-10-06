@@ -17,13 +17,18 @@ DATA_DIR = BASE_DIR / "data"
 GK_FOLDER = BASE_DIR / "GK folder"
 
 # Historical organization / Supervisor mapping.
-# All GK submitted before 2026-09-01 continue using this file.
+# GK submitted before 2026-09-01 continue using this file.
 OLD_IDL_LIST_FILE = DATA_DIR / "IDL List.xlsx"
 
-# New organization / Supervisor mapping from Sep-2026 onward.
-NEW_IDL_LIST_FILE = DATA_DIR / "IDL List Sep2026.xlsx"
+# Sep-2026 organization / Supervisor mapping.
+SEP_IDL_LIST_FILE = DATA_DIR / "IDL List Sep2026.xlsx"
+
+# Oct-2026 organization / Supervisor mapping.
+OCT_IDL_LIST_FILE = DATA_DIR / "IDL List Oct2026.xlsx"
+
 IDL_SHEET_NAME = 0
-IDL_CUTOFF_DATE = date(2026, 9, 1)
+SEP_CUTOFF_DATE = date(2026, 9, 1)
+OCT_CUTOFF_DATE = date(2026, 10, 1)
 
 # Single generated master consumed by build_dashboard.py
 OUTPUT_FILE = DATA_DIR / "Submitter_Tracking_Master_With_Supervisor.xlsx"
@@ -332,7 +337,7 @@ def capture_historical_assignments(existing_df: pd.DataFrame) -> Dict[str, Dict[
 
     for _, row in existing_df.iterrows():
         submitted = parse_submitted_date(row.get(SUBMITTED_DATE_COL, ""))
-        if submitted is None or submitted >= IDL_CUTOFF_DATE:
+        if submitted is None or submitted >= SEP_CUTOFF_DATE:
             continue
 
         ref = normalize_reference(row.get(REFERENCE_COL, ""))
@@ -358,7 +363,7 @@ def restore_historical_assignments(
     restored = 0
     for idx, row in work.iterrows():
         submitted = parse_submitted_date(row.get(SUBMITTED_DATE_COL, ""))
-        if submitted is None or submitted >= IDL_CUTOFF_DATE:
+        if submitted is None or submitted >= SEP_CUTOFF_DATE:
             continue
 
         ref = normalize_reference(row.get(REFERENCE_COL, ""))
@@ -508,10 +513,17 @@ def lookup_name(value, mapping: IDLMapping) -> Tuple[Optional[MatchInfo], bool]:
     return None, False
 
 
-def choose_idl_mapping(submitted_date_value, old_mapping: IDLMapping, new_mapping: IDLMapping) -> IDLMapping:
+def choose_idl_mapping(
+    submitted_date_value,
+    old_mapping: IDLMapping,
+    sep_mapping: IDLMapping,
+    oct_mapping: IDLMapping,
+) -> IDLMapping:
     submitted = parse_submitted_date(submitted_date_value)
-    if submitted is not None and submitted >= IDL_CUTOFF_DATE:
-        return new_mapping
+    if submitted is not None and submitted >= OCT_CUTOFF_DATE:
+        return oct_mapping
+    if submitted is not None and submitted >= SEP_CUTOFF_DATE:
+        return sep_mapping
     # Missing/unparseable date defaults to historical mapping to avoid moving old KPI.
     return old_mapping
 
@@ -519,7 +531,8 @@ def choose_idl_mapping(submitted_date_value, old_mapping: IDLMapping, new_mappin
 def add_supervisor_columns(
     gk_df: pd.DataFrame,
     old_mapping: IDLMapping,
-    new_mapping: IDLMapping,
+    sep_mapping: IDLMapping,
+    oct_mapping: IDLMapping,
 ) -> Tuple[pd.DataFrame, int]:
     required = [GK_OWNER_COL, SUBMITTER_COL]
     for col in required:
@@ -539,7 +552,7 @@ def add_supervisor_columns(
     ambiguous_name_rows = 0
 
     for _, row in work.iterrows():
-        mapping = choose_idl_mapping(row.get(SUBMITTED_DATE_COL, ""), old_mapping, new_mapping)
+        mapping = choose_idl_mapping(row.get(SUBMITTED_DATE_COL, ""), old_mapping, sep_mapping, oct_mapping)
 
         hit: Optional[MatchInfo] = None
         by = ""
@@ -596,7 +609,8 @@ def add_supervisor_columns(
 # ============================================================
 def main() -> None:
     old_mapping = build_idl_mapping(OLD_IDL_LIST_FILE, "IDL List.xlsx")
-    new_mapping = build_idl_mapping(NEW_IDL_LIST_FILE, "IDL List Sep2026.xlsx")
+    sep_mapping = build_idl_mapping(SEP_IDL_LIST_FILE, "IDL List Sep2026.xlsx")
+    oct_mapping = build_idl_mapping(OCT_IDL_LIST_FILE, "IDL List Oct2026.xlsx")
 
     input_files = find_input_files(GK_FOLDER)
     existing_base = read_existing_base()
@@ -629,31 +643,33 @@ def main() -> None:
             "No GK data found. Upload raw export files into 'GK folder' or provide an existing master."
         )
 
-    final_df, ambiguous_name_rows = add_supervisor_columns(updated_df, old_mapping, new_mapping)
+    final_df, ambiguous_name_rows = add_supervisor_columns(updated_df, old_mapping, sep_mapping, oct_mapping)
     final_df, restored_historical_rows = restore_historical_assignments(final_df, frozen_historical)
     save_output(final_df, OUTPUT_FILE)
 
     mapped_count = int((final_df[SUPERVISOR_COL].astype(str).str.strip() != "").sum())
     blank_count = len(final_df) - mapped_count
-    new_period_count = 0
+    sep_period_count = 0
+    oct_period_count = 0
     if SUBMITTED_DATE_COL in final_df.columns:
-        new_period_count = sum(
-            1
-            for v in final_df[SUBMITTED_DATE_COL]
-            if (parse_submitted_date(v) or date.min) >= IDL_CUTOFF_DATE
-        )
+        parsed_dates = [parse_submitted_date(v) or date.min for v in final_df[SUBMITTED_DATE_COL]]
+        sep_period_count = sum(1 for d in parsed_dates if SEP_CUTOFF_DATE <= d < OCT_CUTOFF_DATE)
+        oct_period_count = sum(1 for d in parsed_dates if d >= OCT_CUTOFF_DATE)
 
     print("Done.")
     print(f"GK folder              : {GK_FOLDER}")
-    print(f"Old IDL                : {OLD_IDL_LIST_FILE.name}")
-    print(f"New IDL                : {NEW_IDL_LIST_FILE.name}")
-    print(f"IDL cutoff             : {IDL_CUTOFF_DATE.isoformat()}")
+    print(f"Historical IDL         : {OLD_IDL_LIST_FILE.name}")
+    print(f"Sep IDL                : {SEP_IDL_LIST_FILE.name}")
+    print(f"Oct IDL                : {OCT_IDL_LIST_FILE.name}")
+    print(f"Sep cutoff             : {SEP_CUTOFF_DATE.isoformat()}")
+    print(f"Oct cutoff             : {OCT_CUTOFF_DATE.isoformat()}")
     print(f"Input raw files        : {len(input_files)}")
     for i, fp in enumerate(input_files, start=1):
         print(f"  {i}. {fp.relative_to(BASE_DIR)}")
     print(f"Output file            : {OUTPUT_FILE}")
     print(f"Output rows            : {len(final_df)}")
-    print(f"Rows from Sep mapping  : {new_period_count}")
+    print(f"Rows from Sep mapping  : {sep_period_count}")
+    print(f"Rows from Oct mapping  : {oct_period_count}")
     print(f"Frozen Jan-Aug rows    : {restored_historical_rows}")
     print(f"Mapped rows            : {mapped_count}")
     print(f"Blank Supervisor       : {blank_count}")
